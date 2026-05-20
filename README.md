@@ -13,7 +13,7 @@ Dois tipos de projeto disponíveis: **simples** (pacote único) e **modular** (m
 ├── studies/
 │   ├── in-progress/    ← projetos de estudo ativos
 │   └── done/           ← estudos finalizados
-└── projects/           ← projetos reais / trabalho
+└── kotlin-study-setup/ ← este repositório (scripts)
 ```
 
 ---
@@ -94,44 +94,43 @@ project-name/
 
 ### Modular (`--modular`)
 
-Monolito multi-módulo Maven com separação de responsabilidades em camadas.
+Spring Boot + Spring Modulith, seguindo o padrão do projeto `auditoria-corridas`.
+Cada subpacote do pacote raiz é um módulo Spring Modulith com fronteiras enforçadas automaticamente.
 Ideal para estudar DDD, Clean Architecture, Hexagonal, SOLID aplicado.
 
 ```
-project-name/
-├── pom.xml                          ← parent (packaging=pom)
-├── README.md
-├── docs/anotacoes.md
-│
-├── domain/                          ← entidades, value objects, portas
-│   └── src/main/kotlin/.../domain/
-│       ├── model/User.kt
-│       └── port/UserRepository.kt
-│
-├── application/                     ← casos de uso
-│   └── src/main/kotlin/.../application/
-│       └── usecase/
-│           ├── CreateUserUseCase.kt
-│           └── FindUserUseCase.kt
-│
-├── infrastructure/                  ← implementações de repos e adapters
-│   └── src/main/kotlin/.../infrastructure/
-│       └── repository/
-│           └── InMemoryUserRepository.kt
-│
-└── api/                             ← wiring, ponto de entrada
-    └── src/main/kotlin/.../api/
-        └── Main.kt
+project-name/                        ← Gradle project
+├── build.gradle.kts
+├── settings.gradle.kts
+├── src/main/kotlin/{project}/
+│   ├── {Project}Application.kt      ← @SpringBootApplication
+│   ├── {topic}/                     ← módulo Spring Modulith
+│   │   ├── model/{Topic}.kt         ← @Entity JPA
+│   │   ├── repository/              ← JpaRepository
+│   │   ├── service/                 ← @Service
+│   │   └── controller/              ← @RestController
+│   └── shared/exception/            ← @RestControllerAdvice
+└── src/main/resources/
+    └── application.properties       ← H2 in-memory pronto para uso
 ```
 
-**Dependências entre módulos:**
+**Dependências pré-configuradas (modular):**
 
-```
-api → application → domain
-api → infrastructure → domain
-```
+| Dependência | Função |
+|---|---|
+| `spring-boot-starter-web` | REST API |
+| `spring-boot-starter-data-jpa` | JPA + repositórios |
+| `spring-modulith-starter-core` | Fronteiras de módulo |
+| `spring-modulith-starter-test` | Testes de módulo |
+| `h2` (runtime) | Banco in-memory para estudo |
 
-O `domain` não depende de nada interno — é o núcleo isolado.
+**Para rodar:**
+
+```bash
+./gradlew bootRun
+# App: http://localhost:8080
+# H2 Console: http://localhost:8080/h2-console
+```
 
 ---
 
@@ -160,30 +159,38 @@ Documentação completa: [docs/move-study.md](docs/move-study.md)
 
 ## Dependências pré-configuradas
 
+**Projeto simples (Maven):**
+
 | Dependência | Versão | Escopo |
 |---|---|---|
 | `kotlin-stdlib` | 2.0.21 | compile |
 | `kotlinx-coroutines-core` | 1.8.1 | compile |
-| `junit-jupiter-api` | 5.10.2 | test |
-| `junit-jupiter-engine` | 5.10.2 | test |
+| `junit-jupiter` | 5.10.2 | test |
 | `kotlin-test-junit5` | 2.0.21 | test |
 
-No projeto modular, todas as versões são gerenciadas no parent pom via `<dependencyManagement>`.
+**Projeto modular (Gradle + Spring Boot):**
+
+| Dependência | Versão |
+|---|---|
+| Spring Boot | 4.0.5 |
+| Kotlin | 2.2.21 |
+| Spring Modulith BOM | 2.0.0 |
+| H2 (in-memory) | gerenciado pelo BOM |
 
 ---
 
-## Comandos Maven úteis
+## Comandos úteis
 
 ```bash
-# Projeto simples
+# Projeto simples (Maven)
 mvn test
 mvn compile
 mvn exec:java
 
-# Projeto modular (da raiz)
-mvn compile              # compila todos os módulos
-mvn test                 # testa todos os módulos
-mvn -pl api exec:java    # executa o módulo api
+# Projeto modular (Gradle)
+./gradlew bootRun     # sobe a aplicação
+./gradlew test        # roda os testes
+./gradlew build       # compila + testa + empacota
 ```
 
 ---

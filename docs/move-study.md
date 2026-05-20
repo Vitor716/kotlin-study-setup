@@ -20,10 +20,14 @@ Após isso você pode chamar `move-study` de qualquer diretório.
 ## Estrutura de pastas gerenciada
 
 ```
-~/workspace/studies/
-├── in-progress/    ← projetos ativos (sendo estudados agora)
-└── done/           ← projetos finalizados
+~/workspace/
+├── studies/
+│   ├── in-progress/    ← projetos ativos
+│   └── done/           ← projetos finalizados
+└── kotlin-study-setup/ ← scripts (este repo)
 ```
+
+Tanto projetos Maven (simples) quanto Spring Boot Modulith (--modular) ficam em `studies/`.
 
 ---
 

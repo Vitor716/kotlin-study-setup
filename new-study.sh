@@ -104,7 +104,32 @@ fi
 # ─────────────────────────────────────────────
 
 write_gitignore() {
-  cat > "$TARGET_DIR/.gitignore" <<EOF
+  local build_tool="${1:-maven}"
+
+  if [[ "$build_tool" == "gradle" ]]; then
+    cat > "$TARGET_DIR/.gitignore" <<EOF
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+EOF
+  else
+    cat > "$TARGET_DIR/.gitignore" <<EOF
 # Maven
 target/
 *.class
@@ -126,6 +151,7 @@ Thumbs.db
 # Logs
 *.log
 EOF
+  fi
   print_ok ".gitignore gerado"
 }
 
@@ -342,714 +368,401 @@ EOF
 }
 
 # ─────────────────────────────────────────────
-#  PROJETO MODULAR (monolito multi-módulo Maven)
-# ─────────────────────────────────────────────
+#  PROJETO MODULAR (Spring Boot + Spring Modulith)
 #
-#  Arquitetura:
-#   domain         — entidades, value objects, portas (interfaces)
-#   application    — casos de uso, orquestração de regras
-#   infrastructure — implementações de repositórios e adapters
-#   api            — composição dos módulos, ponto de entrada
+#  Padrao auditoria-corridas:
+#   {pkg}/                     @SpringBootApplication
+#   {pkg}/{topic}/             modulo principal (model/repo/service/controller)
+#   {pkg}/shared/exception/    handler global
 # ─────────────────────────────────────────────
 
 create_modular_project() {
-  print_step "Criando monolito modular em $TARGET_DIR"
+  local SPRING_PKG="${PROJECT_NAME//-/_}"
+  local SPRING_PKG_PATH="${PROJECT_NAME//-/_}"
+  local APP_CLASS
+  APP_CLASS=$(echo "$PROJECT_NAME" | sed -E 's/(^|-)([a-zA-Z])/\U\2/g')
+  local MODULE_CLASS
+  MODULE_CLASS=$(echo "$TOPIC" | sed -E 's/(^|-)([a-zA-Z])/\U\2/g')
+  local MODULE_PKG="${TOPIC//-/_}"
 
-  local DOMAIN_PKG="${GROUP_ID}.domain"
-  local APP_PKG="${GROUP_ID}.application"
-  local INFRA_PKG="${GROUP_ID}.infrastructure"
-  local API_PKG="${GROUP_ID}.api"
+  print_step "Criando Spring Boot + Spring Modulith em $TARGET_DIR"
 
-  local DOMAIN_PATH="${PACKAGE_PATH}/domain"
-  local APP_PATH="${PACKAGE_PATH}/application"
-  local INFRA_PATH="${PACKAGE_PATH}/infrastructure"
-  local API_PATH="${PACKAGE_PATH}/api"
+  # Diretorios
+  mkdir -p "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/model"
+  mkdir -p "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/repository"
+  mkdir -p "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/service"
+  mkdir -p "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/controller"
+  mkdir -p "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/shared/exception"
+  mkdir -p "$TARGET_DIR/src/main/resources"
+  mkdir -p "$TARGET_DIR/src/test/kotlin/$SPRING_PKG_PATH"
+  mkdir -p "$TARGET_DIR/src/test/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/service"
+  mkdir -p "$TARGET_DIR/docs"
+  print_ok "Estrutura de diretorios criada"
 
-  # Estrutura de diretórios
-  mkdir -p "$TARGET_DIR/domain/src/main/kotlin/$DOMAIN_PATH/model"
-  mkdir -p "$TARGET_DIR/domain/src/main/kotlin/$DOMAIN_PATH/port"
-  mkdir -p "$TARGET_DIR/domain/src/main/resources"
-  mkdir -p "$TARGET_DIR/domain/src/test/kotlin/$DOMAIN_PATH/model"
-  mkdir -p "$TARGET_DIR/domain/src/test/resources"
+  # settings.gradle.kts
+  print_step "Gerando Gradle build files"
+  cat > "$TARGET_DIR/settings.gradle.kts" <<SETTINGSEOF
+rootProject.name = "${PROJECT_NAME}"
+SETTINGSEOF
 
-  mkdir -p "$TARGET_DIR/application/src/main/kotlin/$APP_PATH/usecase"
-  mkdir -p "$TARGET_DIR/application/src/main/resources"
-  mkdir -p "$TARGET_DIR/application/src/test/kotlin/$APP_PATH/usecase"
-  mkdir -p "$TARGET_DIR/application/src/test/resources"
-
-  mkdir -p "$TARGET_DIR/infrastructure/src/main/kotlin/$INFRA_PATH/repository"
-  mkdir -p "$TARGET_DIR/infrastructure/src/main/resources"
-  mkdir -p "$TARGET_DIR/infrastructure/src/test/kotlin/$INFRA_PATH/repository"
-  mkdir -p "$TARGET_DIR/infrastructure/src/test/resources"
-
-  mkdir -p "$TARGET_DIR/api/src/main/kotlin/$API_PATH"
-  mkdir -p "$TARGET_DIR/api/src/main/resources"
-
-  print_ok "Estrutura de módulos criada"
-
-  # ── Parent pom.xml ──
-  print_step "Gerando pom.xml (parent + módulos)"
-  cat > "$TARGET_DIR/pom.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <groupId>${GROUP_ID}</groupId>
-    <artifactId>${ARTIFACT_ID}</artifactId>
-    <version>1.0-SNAPSHOT</version>
-    <packaging>pom</packaging>
-
-    <name>${PROJECT_NAME} — Parent</name>
-    <description>Monolito Modular — Estudo: ${TOPIC}</description>
-
-    <modules>
-        <module>domain</module>
-        <module>application</module>
-        <module>infrastructure</module>
-        <module>api</module>
-    </modules>
-
-    <properties>
-        <kotlin.version>2.0.21</kotlin.version>
-        <kotlin.code.style>official</kotlin.code.style>
-        <junit.version>5.10.2</junit.version>
-        <coroutines.version>1.8.1</coroutines.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-stdlib</artifactId>
-                <version>\${kotlin.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jetbrains.kotlinx</groupId>
-                <artifactId>kotlinx-coroutines-core</artifactId>
-                <version>\${coroutines.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.junit.jupiter</groupId>
-                <artifactId>junit-jupiter-api</artifactId>
-                <version>\${junit.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.junit.jupiter</groupId>
-                <artifactId>junit-jupiter-engine</artifactId>
-                <version>\${junit.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-test-junit5</artifactId>
-                <version>\${kotlin.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <!-- Módulos internos -->
-            <dependency>
-                <groupId>${GROUP_ID}</groupId>
-                <artifactId>domain</artifactId>
-                <version>\${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${GROUP_ID}</groupId>
-                <artifactId>application</artifactId>
-                <version>\${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>${GROUP_ID}</groupId>
-                <artifactId>infrastructure</artifactId>
-                <version>\${project.version}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
-    <build>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>org.jetbrains.kotlin</groupId>
-                    <artifactId>kotlin-maven-plugin</artifactId>
-                    <version>\${kotlin.version}</version>
-                    <executions>
-                        <execution>
-                            <id>compile</id>
-                            <goals><goal>compile</goal></goals>
-                            <configuration>
-                                <sourceDirs>
-                                    <sourceDir>\${project.basedir}/src/main/kotlin</sourceDir>
-                                </sourceDirs>
-                            </configuration>
-                        </execution>
-                        <execution>
-                            <id>test-compile</id>
-                            <goals><goal>test-compile</goal></goals>
-                            <configuration>
-                                <sourceDirs>
-                                    <sourceDir>\${project.basedir}/src/test/kotlin</sourceDir>
-                                </sourceDirs>
-                            </configuration>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.2.5</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
-    </build>
-</project>
-EOF
-
-  # ── domain/pom.xml ──
-  cat > "$TARGET_DIR/domain/pom.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>${GROUP_ID}</groupId>
-        <artifactId>${ARTIFACT_ID}</artifactId>
-        <version>1.0-SNAPSHOT</version>
-    </parent>
-
-    <artifactId>domain</artifactId>
-    <description>Entidades, regras de negócio e portas (interfaces)</description>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-test-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-EOF
-
-  # ── application/pom.xml ──
-  cat > "$TARGET_DIR/application/pom.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>${GROUP_ID}</groupId>
-        <artifactId>${ARTIFACT_ID}</artifactId>
-        <version>1.0-SNAPSHOT</version>
-    </parent>
-
-    <artifactId>application</artifactId>
-    <description>Casos de uso e orquestração de regras de negócio</description>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>${GROUP_ID}</groupId>
-            <artifactId>domain</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlinx</groupId>
-            <artifactId>kotlinx-coroutines-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-test-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-EOF
-
-  # ── infrastructure/pom.xml ──
-  cat > "$TARGET_DIR/infrastructure/pom.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>${GROUP_ID}</groupId>
-        <artifactId>${ARTIFACT_ID}</artifactId>
-        <version>1.0-SNAPSHOT</version>
-    </parent>
-
-    <artifactId>infrastructure</artifactId>
-    <description>Implementações de repositórios, adapters e integrações externas</description>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>${GROUP_ID}</groupId>
-            <artifactId>domain</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-test-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-EOF
-
-  # ── api/pom.xml ──
-  cat > "$TARGET_DIR/api/pom.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>${GROUP_ID}</groupId>
-        <artifactId>${ARTIFACT_ID}</artifactId>
-        <version>1.0-SNAPSHOT</version>
-    </parent>
-
-    <artifactId>api</artifactId>
-    <description>Ponto de entrada — composição e wiring dos módulos</description>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>${GROUP_ID}</groupId>
-            <artifactId>application</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>${GROUP_ID}</groupId>
-            <artifactId>infrastructure</artifactId>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>${API_PKG}.MainKt</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
-                <configuration>
-                    <mainClass>${API_PKG}.MainKt</mainClass>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-EOF
-  print_ok "pom.xml de todos os módulos gerado"
-
-  # ──────────────────────────────────────────
-  #  domain — model + port
-  # ──────────────────────────────────────────
-  print_step "Criando classes: domain"
-
-  cat > "$TARGET_DIR/domain/src/main/kotlin/$DOMAIN_PATH/model/User.kt" <<EOF
-package ${DOMAIN_PKG}.model
-
-data class User(
-    val id: String,
-    val name: String,
-    val email: String
-)
-EOF
-
-  cat > "$TARGET_DIR/domain/src/main/kotlin/$DOMAIN_PATH/port/UserRepository.kt" <<EOF
-package ${DOMAIN_PKG}.port
-
-import ${DOMAIN_PKG}.model.User
-
-interface UserRepository {
-    fun save(user: User): User
-    fun findById(id: String): User?
-    fun findAll(): List<User>
-    fun deleteById(id: String): Boolean
+  # build.gradle.kts
+  cat > "$TARGET_DIR/build.gradle.kts" <<BUILDEOF
+plugins {
+    kotlin("jvm") version "2.2.21"
+    kotlin("plugin.spring") version "2.2.21"
+    id("org.springframework.boot") version "4.0.5"
+    id("io.spring.dependency-management") version "1.1.7"
+    kotlin("plugin.jpa") version "2.2.21"
 }
-EOF
 
-  cat > "$TARGET_DIR/domain/src/test/kotlin/$DOMAIN_PATH/model/UserTest.kt" <<EOF
-package ${DOMAIN_PKG}.model
+group = "${GROUP_ID}"
+version = "0.0.1-SNAPSHOT"
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation("org.springframework.modulith:spring-modulith-starter-core")
+
+    // H2 para estudo — troque por postgresql para producao
+    runtimeOnly("com.h2database:h2")
+    // runtimeOnly("org.postgresql:postgresql")
+
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.springframework.modulith:spring-modulith-starter-test")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.modulith:spring-modulith-bom:2.0.0")
+    }
+}
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll("-Xjsr305=strict")
+    }
+}
+
+allOpen {
+    annotation("jakarta.persistence.Entity")
+    annotation("jakarta.persistence.MappedSuperclass")
+    annotation("jakarta.persistence.Embeddable")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+BUILDEOF
+  print_ok "build.gradle.kts + settings.gradle.kts gerados"
+
+  # Gradle wrapper properties
+  print_step "Configurando Gradle wrapper"
+  mkdir -p "$TARGET_DIR/gradle/wrapper"
+  cat > "$TARGET_DIR/gradle/wrapper/gradle-wrapper.properties" <<WRAPEOF
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-9.4.1-bin.zip
+networkTimeout=10000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+WRAPEOF
+
+  if command -v gradle &> /dev/null; then
+    (cd "$TARGET_DIR" && gradle wrapper --gradle-version 9.4.1 -q 2>/dev/null) \
+      && print_ok "Gradle wrapper gerado (binarios incluidos)" \
+      || print_warn "Falha ao gerar binarios — apenas .properties criado"
+  else
+    print_warn "Gradle nao encontrado — execute 'gradle wrapper --gradle-version 9.4.1' manualmente"
+  fi
+
+  # application.properties
+  cat > "$TARGET_DIR/src/main/resources/application.properties" <<APPEOF
+spring.application.name=${PROJECT_NAME}
+
+spring.datasource.url=jdbc:h2:mem:${MODULE_PKG}db
+spring.datasource.driver-class-name=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.jpa.hibernate.ddl-auto=create-drop
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+APPEOF
+
+  # Application.kt
+  print_step "Criando classes Kotlin"
+  cat > "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/${APP_CLASS}Application.kt" <<APPKTEOF
+package ${SPRING_PKG}
+
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.runApplication
+
+@SpringBootApplication
+class ${APP_CLASS}Application
+
+fun main(args: Array<String>) {
+    runApplication<${APP_CLASS}Application>(*args)
+}
+APPKTEOF
+
+  # Model
+  cat > "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/model/${MODULE_CLASS}.kt" <<MODELEOF
+package ${SPRING_PKG}.${MODULE_PKG}.model
+
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.GeneratedValue
+import jakarta.persistence.GenerationType
+import jakarta.persistence.Id
+import jakarta.persistence.Table
+
+@Entity
+@Table(name = "${MODULE_PKG}s")
+data class ${MODULE_CLASS}(
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long? = null,
+
+    @Column(nullable = false)
+    val nome: String,
+
+    @Column
+    val descricao: String = ""
+) {
+    constructor() : this(id = null, nome = "", descricao = "")
+}
+MODELEOF
+
+  # Repository
+  cat > "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/repository/${MODULE_CLASS}Repository.kt" <<REPOEOF
+package ${SPRING_PKG}.${MODULE_PKG}.repository
+
+import ${SPRING_PKG}.${MODULE_PKG}.model.${MODULE_CLASS}
+import org.springframework.data.jpa.repository.JpaRepository
+
+interface ${MODULE_CLASS}Repository : JpaRepository<${MODULE_CLASS}, Long> {
+    fun findByNome(nome: String): List<${MODULE_CLASS}>
+}
+REPOEOF
+
+  # Service
+  cat > "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/service/${MODULE_CLASS}Service.kt" <<SVCEOF
+package ${SPRING_PKG}.${MODULE_PKG}.service
+
+import ${SPRING_PKG}.${MODULE_PKG}.model.${MODULE_CLASS}
+import ${SPRING_PKG}.${MODULE_PKG}.repository.${MODULE_CLASS}Repository
+import org.springframework.stereotype.Service
+
+@Service
+class ${MODULE_CLASS}Service(
+    private val repository: ${MODULE_CLASS}Repository
+) {
+    fun listarTodos(): List<${MODULE_CLASS}> = repository.findAll()
+
+    fun buscarPorId(id: Long): ${MODULE_CLASS} =
+        repository.findById(id).orElseThrow { NoSuchElementException("\${MODULE_CLASS} \${id} nao encontrado") }
+
+    fun criar(entidade: ${MODULE_CLASS}): ${MODULE_CLASS} = repository.save(entidade)
+
+    fun deletar(id: Long) = repository.deleteById(id)
+}
+SVCEOF
+
+  # Controller
+  cat > "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/controller/${MODULE_CLASS}Controller.kt" <<CTRLEOF
+package ${SPRING_PKG}.${MODULE_PKG}.controller
+
+import ${SPRING_PKG}.${MODULE_PKG}.model.${MODULE_CLASS}
+import ${SPRING_PKG}.${MODULE_PKG}.service.${MODULE_CLASS}Service
+import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
+import org.springframework.web.bind.annotation.RestController
+
+@RestController
+@RequestMapping("/${MODULE_PKG}s")
+class ${MODULE_CLASS}Controller(
+    private val service: ${MODULE_CLASS}Service
+) {
+    @GetMapping
+    fun listar(): List<${MODULE_CLASS}> = service.listarTodos()
+
+    @GetMapping("/{id}")
+    fun buscar(@PathVariable id: Long): ${MODULE_CLASS} = service.buscarPorId(id)
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    fun criar(@RequestBody entidade: ${MODULE_CLASS}): ${MODULE_CLASS} = service.criar(entidade)
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun deletar(@PathVariable id: Long) = service.deletar(id)
+}
+CTRLEOF
+
+  # GlobalExceptionHandler
+  cat > "$TARGET_DIR/src/main/kotlin/$SPRING_PKG_PATH/shared/exception/GlobalExceptionHandler.kt" <<EXEOF
+package ${SPRING_PKG}.shared.exception
+
+import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.bind.annotation.ResponseStatus
+import org.springframework.web.bind.annotation.RestControllerAdvice
+
+@RestControllerAdvice
+class GlobalExceptionHandler {
+
+    @ExceptionHandler(NoSuchElementException::class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    fun handleNotFound(ex: NoSuchElementException): Map<String, String> =
+        mapOf("erro" to (ex.message ?: "Recurso nao encontrado"))
+}
+EXEOF
+  print_ok "Application, ${MODULE_CLASS} (model/repo/service/ctrl), GlobalExceptionHandler"
+
+  # Testes
+  print_step "Criando testes"
+  cat > "$TARGET_DIR/src/test/kotlin/$SPRING_PKG_PATH/${APP_CLASS}ApplicationTests.kt" <<ATEOF
+package ${SPRING_PKG}
 
 import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
+import org.springframework.boot.test.context.SpringBootTest
 
-class UserTest {
+@SpringBootTest
+class ${APP_CLASS}ApplicationTests {
 
     @Test
-    fun \`deve criar usuario com dados validos\`() {
-        val user = User(id = "1", name = "Alice", email = "alice@example.com")
-
-        assertNotNull(user)
-        assertEquals("Alice", user.name)
-        assertEquals("alice@example.com", user.email)
+    fun contextLoads() {
     }
 }
-EOF
-  print_ok "domain: User, UserRepository, UserTest"
+ATEOF
 
-  # ──────────────────────────────────────────
-  #  application — use cases
-  # ──────────────────────────────────────────
-  print_step "Criando classes: application"
+  cat > "$TARGET_DIR/src/test/kotlin/$SPRING_PKG_PATH/$MODULE_PKG/service/${MODULE_CLASS}ServiceTest.kt" <<STEOF
+package ${SPRING_PKG}.${MODULE_PKG}.service
 
-  cat > "$TARGET_DIR/application/src/main/kotlin/$APP_PATH/usecase/CreateUserUseCase.kt" <<EOF
-package ${APP_PKG}.usecase
-
-import ${DOMAIN_PKG}.model.User
-import ${DOMAIN_PKG}.port.UserRepository
-import java.util.UUID
-
-class CreateUserUseCase(private val userRepository: UserRepository) {
-
-    data class Input(val name: String, val email: String)
-
-    fun execute(input: Input): User {
-        val user = User(
-            id = UUID.randomUUID().toString(),
-            name = input.name,
-            email = input.email
-        )
-        return userRepository.save(user)
-    }
-}
-EOF
-
-  cat > "$TARGET_DIR/application/src/main/kotlin/$APP_PATH/usecase/FindUserUseCase.kt" <<EOF
-package ${APP_PKG}.usecase
-
-import ${DOMAIN_PKG}.model.User
-import ${DOMAIN_PKG}.port.UserRepository
-
-class FindUserUseCase(private val userRepository: UserRepository) {
-
-    fun execute(id: String): User? = userRepository.findById(id)
-
-    fun findAll(): List<User> = userRepository.findAll()
-}
-EOF
-
-  cat > "$TARGET_DIR/application/src/test/kotlin/$APP_PATH/usecase/CreateUserUseCaseTest.kt" <<EOF
-package ${APP_PKG}.usecase
-
-import ${DOMAIN_PKG}.model.User
-import ${DOMAIN_PKG}.port.UserRepository
+import ${SPRING_PKG}.${MODULE_PKG}.model.${MODULE_CLASS}
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.transaction.annotation.Transactional
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 
-class CreateUserUseCaseTest {
+@SpringBootTest
+@Transactional
+class ${MODULE_CLASS}ServiceTest {
 
-    private val userRepository = object : UserRepository {
-        private val store = mutableMapOf<String, User>()
-        override fun save(user: User) = user.also { store[it.id] = it }
-        override fun findById(id: String) = store[id]
-        override fun findAll() = store.values.toList()
-        override fun deleteById(id: String) = store.remove(id) != null
-    }
-
-    private val useCase = CreateUserUseCase(userRepository)
+    @Autowired
+    private lateinit var service: ${MODULE_CLASS}Service
 
     @Test
-    fun \`deve criar e persistir usuario\`() {
-        val input = CreateUserUseCase.Input(name = "Alice", email = "alice@example.com")
-        val user = useCase.execute(input)
-
-        assertNotNull(user.id)
-        assertEquals("Alice", user.name)
-        assertEquals("alice@example.com", user.email)
-    }
-}
-EOF
-  print_ok "application: CreateUserUseCase, FindUserUseCase, CreateUserUseCaseTest"
-
-  # ──────────────────────────────────────────
-  #  infrastructure — repository impl
-  # ──────────────────────────────────────────
-  print_step "Criando classes: infrastructure"
-
-  cat > "$TARGET_DIR/infrastructure/src/main/kotlin/$INFRA_PATH/repository/InMemoryUserRepository.kt" <<EOF
-package ${INFRA_PKG}.repository
-
-import ${DOMAIN_PKG}.model.User
-import ${DOMAIN_PKG}.port.UserRepository
-
-class InMemoryUserRepository : UserRepository {
-
-    private val store = mutableMapOf<String, User>()
-
-    override fun save(user: User): User {
-        store[user.id] = user
-        return user
-    }
-
-    override fun findById(id: String): User? = store[id]
-
-    override fun findAll(): List<User> = store.values.toList()
-
-    override fun deleteById(id: String): Boolean = store.remove(id) != null
-}
-EOF
-
-  cat > "$TARGET_DIR/infrastructure/src/test/kotlin/$INFRA_PATH/repository/InMemoryUserRepositoryTest.kt" <<EOF
-package ${INFRA_PKG}.repository
-
-import ${DOMAIN_PKG}.model.User
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
-
-class InMemoryUserRepositoryTest {
-
-    private lateinit var repository: InMemoryUserRepository
-
-    @BeforeEach
-    fun setUp() {
-        repository = InMemoryUserRepository()
+    fun \`deve criar e buscar entidade\`() {
+        val nova = service.criar(${MODULE_CLASS}(nome = "Teste", descricao = "Descricao"))
+        assertNotNull(nova.id)
+        val encontrada = service.buscarPorId(nova.id!!)
+        assertEquals("Teste", encontrada.nome)
     }
 
     @Test
-    fun \`deve salvar e recuperar usuario\`() {
-        val user = User(id = "1", name = "Bob", email = "bob@example.com")
-        repository.save(user)
-
-        val found = repository.findById("1")
-        assertNotNull(found)
-        assertEquals("Bob", found.name)
-    }
-
-    @Test
-    fun \`deve retornar null para id inexistente\`() {
-        assertNull(repository.findById("nao-existe"))
-    }
-
-    @Test
-    fun \`deve deletar usuario\`() {
-        val user = User(id = "2", name = "Carol", email = "carol@example.com")
-        repository.save(user)
-
-        assertTrue(repository.deleteById("2"))
-        assertNull(repository.findById("2"))
+    fun \`deve lancar excecao para id inexistente\`() {
+        assertFailsWith<NoSuchElementException> {
+            service.buscarPorId(-1L)
+        }
     }
 }
-EOF
-  print_ok "infrastructure: InMemoryUserRepository, InMemoryUserRepositoryTest"
+STEOF
+  print_ok "${APP_CLASS}ApplicationTests, ${MODULE_CLASS}ServiceTest"
 
-  # ──────────────────────────────────────────
-  #  api — main entry point
-  # ──────────────────────────────────────────
-  print_step "Criando: api/Main.kt"
-
-  cat > "$TARGET_DIR/api/src/main/kotlin/$API_PATH/Main.kt" <<EOF
-package ${API_PKG}
-
-import ${APP_PKG}.usecase.CreateUserUseCase
-import ${APP_PKG}.usecase.FindUserUseCase
-import ${INFRA_PKG}.repository.InMemoryUserRepository
-
-fun main() {
-    val userRepository = InMemoryUserRepository()
-    val createUser    = CreateUserUseCase(userRepository)
-    val findUser      = FindUserUseCase(userRepository)
-
-    val user = createUser.execute(CreateUserUseCase.Input(
-        name  = "Alice",
-        email = "alice@example.com"
-    ))
-    println("Criado : \$user")
-
-    val found = findUser.execute(user.id)
-    println("Encontrado: \$found")
-    println("Total: \${findUser.findAll().size} usuário(s)")
-}
-EOF
-  print_ok "api: Main.kt"
-
-  # ── README.md do projeto modular ──
-  cat > "$TARGET_DIR/README.md" <<EOF
+  # README
+  cat > "$TARGET_DIR/README.md" <<READEOF
 # ${PROJECT_NAME}
 
-> **Tópico:** ${TOPIC}
+> **Topico:** ${TOPIC}
 > **Status:** ${STATUS}
-> **Tipo:** Monolito Modular
-> **Linguagem:** Kotlin + Maven
+> **Tipo:** Monolito Modular — Spring Boot + Spring Modulith
 
-## Arquitetura
-
-\`\`\`
-domain          — entidades, value objects, interfaces (portas)
-application     — casos de uso, orquestração de regras
-infrastructure  — implementações de repos e adapters externos
-api             — composição dos módulos, ponto de entrada
-\`\`\`
-
-Dependências entre módulos:
+## Estrutura
 
 \`\`\`
-api → application → domain
-api → infrastructure → domain
-\`\`\`
-
-## Estrutura gerada
-
-\`\`\`
-${PROJECT_NAME}/
-├── domain/src/main/kotlin/.../domain/
-│   ├── model/User.kt
-│   └── port/UserRepository.kt
-├── application/src/main/kotlin/.../application/
-│   └── usecase/
-│       ├── CreateUserUseCase.kt
-│       └── FindUserUseCase.kt
-├── infrastructure/src/main/kotlin/.../infrastructure/
-│   └── repository/InMemoryUserRepository.kt
-└── api/src/main/kotlin/.../api/
-    └── Main.kt
+${SPRING_PKG}/
++-- ${MODULE_PKG}/
+|   +-- model/        entidades JPA
+|   +-- repository/   Spring Data
+|   +-- service/      regras de negocio
+|   +-- controller/   endpoints REST
++-- shared/exception/ handler global
 \`\`\`
 
 ## Como rodar
 
 \`\`\`bash
-# Compilar todos os módulos
-mvn compile
+./gradlew bootRun
+\`\`\`
 
-# Rodar todos os testes
-mvn test
+- App: http://localhost:8080
+- H2 Console: http://localhost:8080/h2-console
 
-# Executar (a partir da raiz)
-mvn -pl api exec:java
+## Endpoints
+
+| Metodo | URL | Descricao |
+|--------|-----|-----------|
+| GET    | /${MODULE_PKG}s      | Lista todos  |
+| GET    | /${MODULE_PKG}s/{id} | Busca por ID |
+| POST   | /${MODULE_PKG}s      | Cria novo    |
+| DELETE | /${MODULE_PKG}s/{id} | Remove       |
+
+## Testes
+
+\`\`\`bash
+./gradlew test
+\`\`\`
+
+## Trocar para PostgreSQL
+
+Em \`build.gradle.kts\`: descomente \`runtimeOnly("org.postgresql:postgresql")\`
+
+Em \`application.properties\`:
+\`\`\`properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/seu_banco
+spring.datasource.username=usuario
+spring.datasource.password=senha
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.hibernate.ddl-auto=validate
 \`\`\`
 
 ## Objetivo
 
-Descreva aqui o que você está estudando e por quê.
+Descreva aqui o que voce esta estudando e por que.
 
-## Conceitos abordados
+## Referencias
 
-- [ ] Separação de responsabilidades por módulo
-- [ ] Inversão de dependência (domain não depende de infra)
-- [ ] Use cases como orquestradores
-- [ ] Ports & Adapters (Hexagonal)
-
-## Referências
-
-- [Kotlin Docs](https://kotlinlang.org/docs/home.html)
-- [Modular Monolith](https://martinfowler.com/bliki/MonolithFirst.html)
-EOF
+- [Spring Modulith](https://docs.spring.io/spring-modulith/docs/current/reference/html/)
+- [Spring Boot](https://docs.spring.io/spring-boot/docs/current/reference/html/)
+READEOF
 }
+
+
 
 # ─────────────────────────────────────────────
 #  EXECUÇÃO PRINCIPAL
@@ -1066,7 +779,11 @@ else
   create_simple_project
 fi
 
-write_gitignore
+if [[ "$PROJECT_TYPE" == "modular" ]]; then
+  write_gitignore "gradle"
+else
+  write_gitignore "maven"
+fi
 write_docs
 
 # ─── Git init + commit inicial ────────────────
@@ -1081,7 +798,7 @@ git commit -q -m "chore: estrutura inicial — ${PROJECT_TYPE} — ${PROJECT_NAM
 - Tópico: ${TOPIC}
 - Tipo: ${PROJECT_TYPE}
 - Package: ${GROUP_ID}
-- Kotlin 2.0.21 + Maven + JUnit 5"
+- Build: Gradle+SpringBoot (modular) | Maven+JUnit5 (simples)"
 
 print_ok "Commit inicial criado"
 
@@ -1146,10 +863,11 @@ echo -e "  ${BOLD}Status:${RESET}  ${STATUS}"
 
 if [[ "$PROJECT_TYPE" == "modular" ]]; then
   echo ""
-  echo -e "  ${CYAN}Módulos criados:${RESET} domain / application / infrastructure / api"
-  echo -e "  ${CYAN}Para rodar:${RESET}      mvn -pl api exec:java"
+  echo -e "  ${CYAN}Framework:${RESET}  Spring Boot + Spring Modulith"
+  echo -e "  ${CYAN}Para rodar:${RESET} ./gradlew bootRun"
+  echo -e "  ${CYAN}Testes:${RESET}     ./gradlew test"
 else
-  echo -e "  ${CYAN}Para rodar:${RESET}      mvn exec:java"
+  echo -e "  ${CYAN}Para rodar:${RESET} mvn exec:java"
 fi
 
 echo -e "${GREEN}════════════════════════════════════════${RESET}"
