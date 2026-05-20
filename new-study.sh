@@ -13,7 +13,7 @@ RED='\033[0;31m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-REPO_BASE="$HOME/repository"
+REPO_BASE="$HOME/workspace/studies"
 GITHUB_USER=""
 OPEN_EDITOR="intellij"
 

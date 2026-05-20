@@ -19,7 +19,7 @@ print_ok()   { echo -e "${GREEN}✔ $1${RESET}"; }
 print_warn() { echo -e "${YELLOW}⚠ $1${RESET}"; }
 print_err()  { echo -e "${RED}✖ $1${RESET}"; }
 
-REPO_BASE="$HOME/repository"
+REPO_BASE="$HOME/workspace/studies"
 SCRIPTS_DIR="$HOME/.study-scripts"
 
 echo ""
@@ -58,8 +58,10 @@ esac
 print_step "Criando estrutura de pastas"
 
 mkdir -p "$REPO_BASE"/{in-progress,done}
+mkdir -p "$HOME/workspace/projects"
 print_ok "Criado: $REPO_BASE/in-progress/"
 print_ok "Criado: $REPO_BASE/done/"
+print_ok "Criado: $HOME/workspace/projects/"
 
 # ─── 4. Instalar scripts ──────────────────────
 
@@ -76,8 +78,8 @@ cp "$SCRIPT_DIR_SOURCE/move-study.sh" "$SCRIPTS_DIR/"
 # Aplicar configurações no new-study.sh
 sed -i "s|GITHUB_USER=\"\"|GITHUB_USER=\"$GITHUB_USER\"|g" "$SCRIPTS_DIR/new-study.sh"
 sed -i "s|OPEN_EDITOR=\"intellij\"|OPEN_EDITOR=\"$OPEN_EDITOR\"|g" "$SCRIPTS_DIR/new-study.sh"
-sed -i "s|REPO_BASE=\"\$HOME/repository\"|REPO_BASE=\"$REPO_BASE\"|g" "$SCRIPTS_DIR/new-study.sh"
-sed -i "s|REPO_BASE=\"\$HOME/repository\"|REPO_BASE=\"$REPO_BASE\"|g" "$SCRIPTS_DIR/move-study.sh"
+sed -i "s|REPO_BASE=\"\$HOME/workspace/studies\"|REPO_BASE=\"$REPO_BASE\"|g" "$SCRIPTS_DIR/new-study.sh"
+sed -i "s|REPO_BASE=\"\$HOME/workspace/studies\"|REPO_BASE=\"$REPO_BASE\"|g" "$SCRIPTS_DIR/move-study.sh"
 
 chmod +x "$SCRIPTS_DIR/new-study.sh"
 chmod +x "$SCRIPTS_DIR/move-study.sh"
@@ -153,7 +155,8 @@ echo -e "  ${CYAN}move-study${RESET}  → muda status do projeto"
 echo -e "  ${CYAN}studies${RESET}     → lista projetos em andamento"
 echo ""
 echo -e "  ${BOLD}Estrutura criada em:${RESET}"
-echo -e "  ${CYAN}$REPO_BASE/${RESET}"
-echo -e "  ├── in-progress/"
-echo -e "  └── done/"
+echo -e "  ${CYAN}~/workspace/${RESET}"
+echo -e "  ├── studies/in-progress/   ← projetos de estudo ativos"
+echo -e "  ├── studies/done/          ← estudos finalizados"
+echo -e "  └── projects/              ← projetos reais / trabalho"
 echo ""

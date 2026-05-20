@@ -6,22 +6,42 @@ Dois tipos de projeto disponíveis: **simples** (pacote único) e **modular** (m
 
 ---
 
+## Estrutura de pastas gerada
+
+```
+~/workspace/
+├── studies/
+│   ├── in-progress/    ← projetos de estudo ativos
+│   └── done/           ← estudos finalizados
+└── projects/           ← projetos reais / trabalho
+```
+
+---
+
 ## Instalação (só uma vez)
 
 ```bash
-# 1. Clone ou copie a pasta kotlin-study-setup para o seu WSL
-# 2. Entre na pasta e rode:
+# 1. Clone o repositório
+git clone https://github.com/Vitor716/kotlin-study-setup
+cd kotlin-study-setup
 
+# 2. Dê permissão e rode o setup
 chmod +x setup.sh new-study.sh move-study.sh
 ./setup.sh
+
+# 3. Ative no terminal atual
 source ~/.bashrc
 ```
 
 O `setup.sh` vai:
-- Criar a estrutura `~/repository/in-progress/` e `~/repository/done/`
-- Instalar os scripts no PATH
+- Criar a estrutura `~/workspace/studies/{in-progress,done}` e `~/workspace/projects/`
+- Instalar os scripts no PATH (`~/.study-scripts/`)
+- Configurar os aliases `new-study`, `move-study` e `studies`
 - Verificar dependências (git, mvn, java, gh)
 - Autenticar o GitHub CLI se necessário
+
+> **Atenção:** após o setup, use `new-study` (sem `.sh`).  
+> Se ainda não rodou o setup, chame diretamente: `./new-study.sh`
 
 ---
 
@@ -42,7 +62,7 @@ new-study -n clean-arch-study -t ddd --modular
 new-study -n hexagonal-arch -t architecture --modular --private
 ```
 
-### Flags disponíveis
+### Flags do new-study
 
 | Flag | Descrição | Exemplo |
 |------|-----------|---------|
@@ -115,21 +135,26 @@ O `domain` não depende de nada interno — é o núcleo isolado.
 
 ---
 
-## Gerenciar projetos
+## Gerenciar projetos com move-study
 
 ```bash
-# Ver projetos em andamento
-studies
+# Listar todos os projetos (com data do último commit)
+move-study --list
 
 # Mover para finalizado
 move-study solid-principles done
 
-# Mover de volta para em andamento
+# Retomar um estudo
 move-study solid-principles in-progress
 
-# Listar todos
-move-study --list
+# Ver detalhes de um projeto (git info, commits, etc.)
+move-study --info solid-principles
+
+# Atalho para ver apenas os ativos
+studies
 ```
+
+Documentação completa: [docs/move-study.md](docs/move-study.md)
 
 ---
 
@@ -195,7 +220,7 @@ Para abrir o IntelliJ pelo terminal do WSL, adicione o launcher ao PATH:
 echo 'export PATH="$PATH:/mnt/c/Program Files/JetBrains/IntelliJ IDEA/bin"' >> ~/.bashrc
 ```
 
-Ou abra manualmente com `File > Open` e navegue até `\\wsl$\Ubuntu\home\seu-usuario\repository`.
+Ou abra manualmente com `File > Open` e navegue até `\\wsl$\Ubuntu\home\seu-usuario\workspace\studies`.
 
 ---
 
@@ -209,5 +234,6 @@ Ideias para próximas evoluções:
 - Template para projetos Ktor
 - Opção de adicionar MockK às dependências de teste
 - Suporte a módulos customizados no `--modular`
+- Comando `move-study --archive` para comprimir projetos finalizados
 
 Abra uma issue ou PR com sua sugestão.
